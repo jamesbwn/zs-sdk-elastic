@@ -8,8 +8,10 @@ import { Price, Token } from '@kyberswap/ks-sdk-core';
  */
 export declare function tickToPrice(baseToken: Token, quoteToken: Token, tick: number): Price<Token, Token>;
 /**
- * Returns the first tick for which the given price is greater than or equal to the tick price
+ * Returns tick for which the given price is closest to the tick price
  * @param price for which to return the closest tick that represents a price less than or equal to the input price,
  * i.e. the price of the returned tick is less than or equal to the input price
+ *
+ * Solving this equation: `price = 1.0001 ^ tick` => tick = log_1.0001(price)
  */
 export declare function priceToClosestTick(price: Price<Token, Token>): number;

@@ -18,6 +18,9 @@
     "test": "tsdx test",
     "prepublishOnly": "tsdx build"
   },
+  // "peerDependencies": {
+  //   "@kyberswap/ks-sdk-core": "jamesbwn/zs-sdk-core"
+  // },
   "dependencies": {
     "@ethersproject/abi": "^5.0.12",
     "@ethersproject/solidity": "^5.0.9",

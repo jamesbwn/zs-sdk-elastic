@@ -1,8 +1,8 @@
-export const FACTORY_ADDRESS = '0x0C7369F931a8D809E443c1d4A5DCe663fF888a73'
+export const FACTORY_ADDRESS = '0x7cbb1dB566beC88E4A7d2a1E47dFc6C95885a126'
 
 export const ADDRESS_ZERO = '0x0000000000000000000000000000000000000000'
 
-export const POOL_INIT_CODE_HASH = '0xd71790a46dff0e075392efbd706356cd5a822a782f46e9859829440065879f81'
+export const POOL_INIT_CODE_HASH = '0x62727aa274be42ff169ce253ffab784a80793c607a93adfe47e0695f085b94ff'
 
 /**
  * The default factory enabled fee amounts, denominated in hundredths of bips.
@@ -13,7 +13,6 @@ export enum FeeAmount {
   LOW = 40,
   MEDIUM = 300,
   HIGH = 1000,
-  F5 = 50
 }
 
 /**
@@ -25,7 +24,6 @@ export const TICK_SPACINGS: { [amount in FeeAmount]: number } = {
   [FeeAmount.LOW]: 8,
   [FeeAmount.MEDIUM]: 60,
   [FeeAmount.HIGH]: 200, 
-  [FeeAmount.F5]: 10
 }
 
 export const MIN_LIQUIDITY = 100000

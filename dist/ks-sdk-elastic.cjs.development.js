@@ -900,9 +900,9 @@ try {
 
 var _TICK_SPACINGS;
 
-var FACTORY_ADDRESS = '0x0C7369F931a8D809E443c1d4A5DCe663fF888a73';
+var FACTORY_ADDRESS = '0x7cbb1dB566beC88E4A7d2a1E47dFc6C95885a126';
 var ADDRESS_ZERO = '0x0000000000000000000000000000000000000000';
-var POOL_INIT_CODE_HASH = '0xd71790a46dff0e075392efbd706356cd5a822a782f46e9859829440065879f81';
+var POOL_INIT_CODE_HASH = '0x62727aa274be42ff169ce253ffab784a80793c607a93adfe47e0695f085b94ff';
 
 (function (FeeAmount) {
   FeeAmount[FeeAmount["STABLE"] = 8] = "STABLE";
@@ -1571,9 +1571,11 @@ function tickToPrice(baseToken, quoteToken, tick) {
   return baseToken.sortsBefore(quoteToken) ? new ksSdkCore.Price(baseToken, quoteToken, Q192, ratioX192) : new ksSdkCore.Price(baseToken, quoteToken, ratioX192, Q192);
 }
 /**
- * Returns the first tick for which the given price is greater than or equal to the tick price
+ * Returns tick for which the given price is closest to the tick price
  * @param price for which to return the closest tick that represents a price less than or equal to the input price,
  * i.e. the price of the returned tick is less than or equal to the input price
+ *
+ * Solving this equation: `price = 1.0001 ^ tick` => tick = log_1.0001(price)
  */
 
 function priceToClosestTick(price) {
@@ -1603,13 +1605,15 @@ var findNearestValue = function findNearestValue(current, prices) {
   return best;
 };
 
-var findNearerValue = function findNearerValue(current, lower, upper) {
+var findNearerValue = function findNearerValue(current, val1, val2) {
+  var lower = val1.lessThan(val2) ? val1 : val2;
+  var upper = val1.lessThan(val2) ? val2 : val1;
   var middle = upper.add(lower).divide(2);
   return middle.lessThan(current) || middle.equalTo(current) ? upper : lower;
 };
 
 var MaxUint160 = /*#__PURE__*/JSBI.subtract( /*#__PURE__*/JSBI.exponentiate( /*#__PURE__*/JSBI.BigInt(2), /*#__PURE__*/JSBI.BigInt(160)), ONE);
-var MAX_FEE = /*#__PURE__*/JSBI.exponentiate( /*#__PURE__*/JSBI.BigInt(10), /*#__PURE__*/JSBI.BigInt(4));
+var MAX_FEE = /*#__PURE__*/JSBI.exponentiate( /*#__PURE__*/JSBI.BigInt(10), /*#__PURE__*/JSBI.BigInt(5));
 
 function multiplyIn256(x, y) {
   var product = JSBI.multiply(x, y);
@@ -4719,343 +4723,6 @@ var Payments = /*#__PURE__*/function () {
 }();
 Payments.INTERFACE = /*#__PURE__*/new abi$5.Interface(abi$2);
 
-var _excluded = ["expectedCurrencyOwed0", "expectedCurrencyOwed1"];
-
-function isMint(options) {
-  return Object.keys(options).some(function (k) {
-    return k === 'recipient';
-  });
-}
-
-var NonfungiblePositionManager = /*#__PURE__*/function () {
-  /**
-   * Cannot be constructed.
-   */
-  function NonfungiblePositionManager() {}
-
-  NonfungiblePositionManager.encodeCreate = function encodeCreate(pool) {
-    return NonfungiblePositionManager.INTERFACE.encodeFunctionData('createAndUnlockPoolIfNecessary', [pool.token0.address, pool.token1.address, pool.fee, toHex(pool.sqrtRatioX96)]);
-  };
-
-  NonfungiblePositionManager.createCallParameters = function createCallParameters(pool) {
-    Multicall.encodeMulticall([this.encodeCreate(pool)]);
-    return {
-      calldata: this.encodeCreate(pool),
-      value: toHex(0)
-    };
-  };
-
-  NonfungiblePositionManager.createCallParametersTest = function createCallParametersTest(pool, ethAmount) {
-    return {
-      calldata: this.encodeCreate(pool),
-      value: toHex(ethAmount)
-    };
-  };
-
-  NonfungiblePositionManager.addCallParameters = function addCallParameters(position, ticksPrevious, options) {
-    !JSBI.greaterThan(position.liquidity, ZERO) ?  invariant(false, 'ZERO_LIQUIDITY')  : void 0;
-    var calldatas = []; // get amounts
-
-    var _position$mintAmounts = position.mintAmounts,
-        amount0Desired = _position$mintAmounts.amount0,
-        amount1Desired = _position$mintAmounts.amount1; // adjust for slippage
-
-    var minimumAmounts = position.mintAmountsWithSlippage(options.slippageTolerance);
-    var amount0Min = toHex(minimumAmounts.amount0);
-    var amount1Min = toHex(minimumAmounts.amount1);
-    var deadline = toHex(options.deadline); // create pool if needed
-
-    if (isMint(options) && options.createPool) {
-      calldatas.push(this.encodeCreate(position.pool));
-    } // permits if necessary
-    // if (options.token0Permit) {
-    //   calldatas.push(SelfPermit.encodePermit(position.pool.token0, options.token0Permit))
-    // }
-    // if (options.token1Permit) {
-    //   calldatas.push(SelfPermit.encodePermit(position.pool.token1, options.token1Permit))
-    // }
-    // mint
-
-
-    if (isMint(options)) {
-      var recipient = ksSdkCore.validateAndParseAddress(options.recipient);
-      calldatas.push(NonfungiblePositionManager.INTERFACE.encodeFunctionData('mint', [{
-        token0: position.pool.token0.address,
-        token1: position.pool.token1.address,
-        fee: position.pool.fee,
-        tickLower: position.tickLower,
-        tickUpper: position.tickUpper,
-        ticksPrevious: ticksPrevious,
-        amount0Desired: toHex(amount0Desired),
-        amount1Desired: toHex(amount1Desired),
-        amount0Min: amount0Min,
-        amount1Min: amount1Min,
-        recipient: recipient,
-        deadline: deadline
-      }]));
-    } else {
-      // increase
-      calldatas.push(NonfungiblePositionManager.INTERFACE.encodeFunctionData('addLiquidity', [{
-        tokenId: toHex(options.tokenId),
-        amount0Desired: toHex(amount0Desired),
-        amount1Desired: toHex(amount1Desired),
-        amount0Min: amount0Min,
-        amount1Min: amount1Min,
-        deadline: deadline
-      }]));
-    }
-
-    var value = toHex(0);
-
-    if (options.useNative) {
-      var wrapped = options.useNative.wrapped;
-      !(position.pool.token0.equals(wrapped) || position.pool.token1.equals(wrapped)) ?  invariant(false, 'NO_WETH')  : void 0;
-      var wrappedValue = position.pool.token0.equals(wrapped) ? amount0Desired : amount1Desired; // we only need to refund if we're actually sending ETH
-
-      if (JSBI.greaterThan(wrappedValue, ZERO)) {
-        calldatas.push(Payments.encodeRefundETH());
-      }
-
-      if (isMint(options) && options.createPool) {
-        var ethUnlock = position.pool.token0.equals(wrapped) ? SqrtPriceMath.getAmount0Unlock(position.pool.sqrtRatioX96) : SqrtPriceMath.getAmount1Unlock(position.pool.sqrtRatioX96);
-        value = toHex(JSBI.add(wrappedValue, ethUnlock));
-      } else value = toHex(wrappedValue);
-    }
-
-    return {
-      calldata: Multicall.encodeMulticall(calldatas),
-      value: value
-    };
-  };
-
-  NonfungiblePositionManager.addCallParametersUnuse = function addCallParametersUnuse(position, options) {
-    !JSBI.greaterThan(position.liquidity, ZERO) ?  invariant(false, 'ZERO_LIQUIDITY')  : void 0;
-    var calldatas = []; // get amounts
-
-    var _position$mintAmounts2 = position.mintAmounts,
-        amount0Desired = _position$mintAmounts2.amount0,
-        amount1Desired = _position$mintAmounts2.amount1; // adjust for slippage
-
-    var minimumAmounts = position.mintAmountsWithSlippage(options.slippageTolerance);
-    var amount0Min = toHex(minimumAmounts.amount0);
-    var amount1Min = toHex(minimumAmounts.amount1);
-    var deadline = toHex(options.deadline); // create pool if needed
-
-    if (isMint(options) && options.createPool) {
-      calldatas.push(this.encodeCreate(position.pool));
-    } // permits if necessary
-    // if (options.token0Permit) {
-    //   calldatas.push(SelfPermit.encodePermit(position.pool.token0, options.token0Permit))
-    // }
-    // if (options.token1Permit) {
-    //   calldatas.push(SelfPermit.encodePermit(position.pool.token1, options.token1Permit))
-    // }
-    // mint
-
-
-    if (isMint(options)) {
-      var recipient = ksSdkCore.validateAndParseAddress(options.recipient);
-      calldatas.push(NonfungiblePositionManager.INTERFACE.encodeFunctionData('mint', [{
-        token0: position.pool.token0.address,
-        token1: position.pool.token1.address,
-        fee: position.pool.fee,
-        tickLower: position.tickLower,
-        tickUpper: position.tickUpper,
-        amount0Desired: toHex(amount0Desired),
-        amount1Desired: toHex(amount1Desired),
-        amount0Min: amount0Min,
-        amount1Min: amount1Min,
-        recipient: recipient,
-        deadline: deadline
-      }]));
-    } else {
-      // increase
-      calldatas.push(NonfungiblePositionManager.INTERFACE.encodeFunctionData('increaseLiquidity', [{
-        tokenId: toHex(options.tokenId),
-        amount0Desired: toHex(amount0Desired),
-        amount1Desired: toHex(amount1Desired),
-        amount0Min: amount0Min,
-        amount1Min: amount1Min,
-        deadline: deadline
-      }]));
-    }
-
-    var value = toHex(0);
-
-    if (options.useNative) {
-      var wrapped = options.useNative.wrapped;
-      !(position.pool.token0.equals(wrapped) || position.pool.token1.equals(wrapped)) ?  invariant(false, 'NO_WETH')  : void 0;
-      var wrappedValue = position.pool.token0.equals(wrapped) ? amount0Desired : amount1Desired; // we only need to refund if we're actually sending ETH
-
-      if (JSBI.greaterThan(wrappedValue, ZERO)) {
-        calldatas.push(Payments.encodeRefundETH());
-      }
-
-      value = toHex(wrappedValue);
-    }
-
-    return {
-      calldata: Multicall.encodeMulticall(calldatas),
-      value: value
-    };
-  };
-
-  NonfungiblePositionManager.encodeCollect = function encodeCollect(options) {
-    var calldatas = [];
-    var tokenId = toHex(options.tokenId); // const involvesETH =
-    // options.expectedCurrencyOwed0.currency.isNative || options.expectedCurrencyOwed1.currency.isNative
-
-    var recipient = ksSdkCore.validateAndParseAddress(options.recipient);
-    var deadline = toHex(options.deadline); //remove a small amount to update the RTokens
-
-    if (!options.isRemovingLiquid) {
-      calldatas.push(NonfungiblePositionManager.INTERFACE.encodeFunctionData('removeLiquidity', [{
-        tokenId: tokenId,
-        liquidity: '0x1',
-        amount0Min: 0,
-        amount1Min: 0,
-        deadline: deadline
-      }]));
-    }
-
-    if (options.havingFee) {
-      // collect
-      calldatas.push(NonfungiblePositionManager.INTERFACE.encodeFunctionData('burnRTokens', [{
-        tokenId: tokenId,
-        amount0Min: 0,
-        amount1Min: 0,
-        deadline: deadline
-      }]));
-    }
-
-    var token0IsNative = options.expectedCurrencyOwed0.currency.isNative;
-    var token1IsNative = options.expectedCurrencyOwed1.currency.isNative;
-    var token0Amount = options.expectedCurrencyOwed0.quotient;
-    var token1Amount = options.expectedCurrencyOwed1.quotient;
-
-    if (token0IsNative) {
-      calldatas.push(Payments.encodeUnwrapWETH(token0Amount, recipient));
-    } else {
-      var token = options.expectedCurrencyOwed0.currency;
-      calldatas.push(Payments.encodeSweepToken(token, token0Amount, recipient));
-    }
-
-    if (token1IsNative) {
-      calldatas.push(Payments.encodeUnwrapWETH(token1Amount, recipient));
-    } else {
-      var _token = options.expectedCurrencyOwed1.currency;
-      calldatas.push(Payments.encodeSweepToken(_token, token1Amount, recipient));
-    } // if (involvesETH) {
-    //   const ethAmount = options.expectedCurrencyOwed0.currency.isNative
-    //     ? options.expectedCurrencyOwed0.quotient
-    //     : options.expectedCurrencyOwed1.quotient
-    //   const token = options.expectedCurrencyOwed0.currency.isNative
-    //     ? (options.expectedCurrencyOwed1.currency as Token)
-    //     : (options.expectedCurrencyOwed0.currency as Token)
-    //   const tokenAmount = options.expectedCurrencyOwed0.currency.isNative
-    //     ? options.expectedCurrencyOwed1.quotient
-    //     : options.expectedCurrencyOwed0.quotient
-    //   calldatas.push(Payments.encodeUnwrapWETH(ethAmount, recipient))
-    //   calldatas.push(Payments.encodeSweepToken(token, tokenAmount, recipient))
-    // }
-
-
-    return calldatas;
-  };
-
-  NonfungiblePositionManager.collectCallParameters = function collectCallParameters(options) {
-    var calldatas = NonfungiblePositionManager.encodeCollect(options);
-    return {
-      calldata: Multicall.encodeMulticall(calldatas),
-      value: toHex(0)
-    };
-  }
-  /**
-   * Produces the calldata for completely or partially exiting a position
-   * @param position The position to exit
-   * @param options Additional information necessary for generating the calldata
-   * @returns The call parameters
-   */
-  ;
-
-  NonfungiblePositionManager.removeCallParameters = function removeCallParameters(position, options) {
-    var calldatas = [];
-    var deadline = toHex(options.deadline);
-    var tokenId = toHex(options.tokenId);
-    console.log(position); // construct a partial position with a percentage of liquidity
-
-    var partialPosition = new Position({
-      pool: position.pool,
-      liquidity: options.liquidityPercentage.multiply(position.liquidity).quotient,
-      tickLower: position.tickLower,
-      tickUpper: position.tickUpper
-    });
-    !JSBI.greaterThan(partialPosition.liquidity, ZERO) ?  invariant(false, 'ZERO_LIQUIDITY')  : void 0; // slippage-adjusted underlying amounts
-
-    var _partialPosition$burn = partialPosition.burnAmountsWithSlippage(options.slippageTolerance),
-        amount0Min = _partialPosition$burn.amount0,
-        amount1Min = _partialPosition$burn.amount1;
-
-    if (options.permit) {
-      calldatas.push(NonfungiblePositionManager.INTERFACE.encodeFunctionData('permit', [ksSdkCore.validateAndParseAddress(options.permit.spender), tokenId, toHex(options.permit.deadline), options.permit.v, options.permit.r, options.permit.s]));
-    } // remove liquidity
-
-
-    calldatas.push(NonfungiblePositionManager.INTERFACE.encodeFunctionData('removeLiquidity', [{
-      tokenId: tokenId,
-      liquidity: toHex(partialPosition.liquidity),
-      amount0Min: toHex(amount0Min),
-      amount1Min: toHex(amount1Min),
-      deadline: deadline
-    }]));
-
-    var _options$collectOptio = options.collectOptions,
-        expectedCurrencyOwed0 = _options$collectOptio.expectedCurrencyOwed0,
-        expectedCurrencyOwed1 = _options$collectOptio.expectedCurrencyOwed1,
-        rest = _objectWithoutPropertiesLoose(_options$collectOptio, _excluded);
-
-    calldatas.push.apply(calldatas, NonfungiblePositionManager.encodeCollect(_extends({
-      tokenId: toHex(options.tokenId),
-      // add the underlying value to the expected currency already owed
-      expectedCurrencyOwed0: expectedCurrencyOwed0.add(ksSdkCore.CurrencyAmount.fromRawAmount(expectedCurrencyOwed0.currency, amount0Min)),
-      expectedCurrencyOwed1: expectedCurrencyOwed1.add(ksSdkCore.CurrencyAmount.fromRawAmount(expectedCurrencyOwed1.currency, amount1Min))
-    }, rest)));
-
-    if (options.liquidityPercentage.equalTo(ONE)) {
-      if (options.burnToken) {
-        calldatas.push(NonfungiblePositionManager.INTERFACE.encodeFunctionData('burn', [tokenId]));
-      }
-    } else {
-      !(options.burnToken !== true) ?  invariant(false, 'CANNOT_BURN')  : void 0;
-    }
-
-    return {
-      calldata: Multicall.encodeMulticall(calldatas),
-      value: toHex(0)
-    };
-  };
-
-  NonfungiblePositionManager.safeTransferFromParameters = function safeTransferFromParameters(options) {
-    var recipient = ksSdkCore.validateAndParseAddress(options.recipient);
-    var sender = ksSdkCore.validateAndParseAddress(options.sender);
-    var calldata;
-
-    if (options.data) {
-      calldata = NonfungiblePositionManager.INTERFACE.encodeFunctionData('safeTransferFrom(address,address,uint256,bytes)', [sender, recipient, toHex(options.tokenId), options.data]);
-    } else {
-      calldata = NonfungiblePositionManager.INTERFACE.encodeFunctionData('safeTransferFrom(address,address,uint256)', [sender, recipient, toHex(options.tokenId)]);
-    }
-
-    return {
-      calldata: calldata,
-      value: toHex(0)
-    };
-  };
-
-  return NonfungiblePositionManager;
-}();
-NonfungiblePositionManager.INTERFACE = /*#__PURE__*/new abi$5.Interface(abi$1);
-
 var abi$3 = [
 	{
 		inputs: [
@@ -5984,6 +5651,343 @@ var SwapRouter = /*#__PURE__*/function () {
   return SwapRouter;
 }();
 SwapRouter.INTERFACE = /*#__PURE__*/new abi$5.Interface(abi$4);
+
+var _excluded = ["expectedCurrencyOwed0", "expectedCurrencyOwed1"];
+
+function isMint(options) {
+  return Object.keys(options).some(function (k) {
+    return k === 'recipient';
+  });
+}
+
+var NonfungiblePositionManager = /*#__PURE__*/function () {
+  /**
+   * Cannot be constructed.
+   */
+  function NonfungiblePositionManager() {}
+
+  NonfungiblePositionManager.encodeCreate = function encodeCreate(pool) {
+    return NonfungiblePositionManager.INTERFACE.encodeFunctionData('createAndUnlockPoolIfNecessary', [pool.token0.address, pool.token1.address, pool.fee, toHex(pool.sqrtRatioX96)]);
+  };
+
+  NonfungiblePositionManager.createCallParameters = function createCallParameters(pool) {
+    Multicall.encodeMulticall([this.encodeCreate(pool)]);
+    return {
+      calldata: this.encodeCreate(pool),
+      value: toHex(0)
+    };
+  };
+
+  NonfungiblePositionManager.createCallParametersTest = function createCallParametersTest(pool, ethAmount) {
+    return {
+      calldata: this.encodeCreate(pool),
+      value: toHex(ethAmount)
+    };
+  };
+
+  NonfungiblePositionManager.addCallParameters = function addCallParameters(position, ticksPrevious, options) {
+    !JSBI.greaterThan(position.liquidity, ZERO) ?  invariant(false, 'ZERO_LIQUIDITY')  : void 0;
+    var calldatas = []; // get amounts
+
+    var _position$mintAmounts = position.mintAmounts,
+        amount0Desired = _position$mintAmounts.amount0,
+        amount1Desired = _position$mintAmounts.amount1; // adjust for slippage
+
+    var minimumAmounts = position.mintAmountsWithSlippage(options.slippageTolerance);
+    var amount0Min = toHex(minimumAmounts.amount0);
+    var amount1Min = toHex(minimumAmounts.amount1);
+    var deadline = toHex(options.deadline); // create pool if needed
+
+    if (isMint(options) && options.createPool) {
+      calldatas.push(this.encodeCreate(position.pool));
+    } // permits if necessary
+    // if (options.token0Permit) {
+    //   calldatas.push(SelfPermit.encodePermit(position.pool.token0, options.token0Permit))
+    // }
+    // if (options.token1Permit) {
+    //   calldatas.push(SelfPermit.encodePermit(position.pool.token1, options.token1Permit))
+    // }
+    // mint
+
+
+    if (isMint(options)) {
+      var recipient = ksSdkCore.validateAndParseAddress(options.recipient);
+      calldatas.push(NonfungiblePositionManager.INTERFACE.encodeFunctionData('mint', [{
+        token0: position.pool.token0.address,
+        token1: position.pool.token1.address,
+        fee: position.pool.fee,
+        tickLower: position.tickLower,
+        tickUpper: position.tickUpper,
+        ticksPrevious: ticksPrevious,
+        amount0Desired: toHex(amount0Desired),
+        amount1Desired: toHex(amount1Desired),
+        amount0Min: amount0Min,
+        amount1Min: amount1Min,
+        recipient: recipient,
+        deadline: deadline
+      }]));
+    } else {
+      // increase
+      calldatas.push(NonfungiblePositionManager.INTERFACE.encodeFunctionData('addLiquidity', [{
+        tokenId: toHex(options.tokenId),
+        amount0Desired: toHex(amount0Desired),
+        amount1Desired: toHex(amount1Desired),
+        amount0Min: amount0Min,
+        amount1Min: amount1Min,
+        deadline: deadline
+      }]));
+    }
+
+    var value = toHex(0);
+
+    if (options.useNative) {
+      var wrapped = options.useNative.wrapped;
+      !(position.pool.token0.equals(wrapped) || position.pool.token1.equals(wrapped)) ?  invariant(false, 'NO_WETH')  : void 0;
+      var wrappedValue = position.pool.token0.equals(wrapped) ? amount0Desired : amount1Desired; // we only need to refund if we're actually sending ETH
+
+      if (JSBI.greaterThan(wrappedValue, ZERO)) {
+        calldatas.push(Payments.encodeRefundETH());
+      }
+
+      if (isMint(options) && options.createPool) {
+        var ethUnlock = position.pool.token0.equals(wrapped) ? SqrtPriceMath.getAmount0Unlock(position.pool.sqrtRatioX96) : SqrtPriceMath.getAmount1Unlock(position.pool.sqrtRatioX96);
+        value = toHex(JSBI.add(wrappedValue, ethUnlock));
+      } else value = toHex(wrappedValue);
+    }
+
+    return {
+      calldata: Multicall.encodeMulticall(calldatas),
+      value: value
+    };
+  };
+
+  NonfungiblePositionManager.addCallParametersUnuse = function addCallParametersUnuse(position, options) {
+    !JSBI.greaterThan(position.liquidity, ZERO) ?  invariant(false, 'ZERO_LIQUIDITY')  : void 0;
+    var calldatas = []; // get amounts
+
+    var _position$mintAmounts2 = position.mintAmounts,
+        amount0Desired = _position$mintAmounts2.amount0,
+        amount1Desired = _position$mintAmounts2.amount1; // adjust for slippage
+
+    var minimumAmounts = position.mintAmountsWithSlippage(options.slippageTolerance);
+    var amount0Min = toHex(minimumAmounts.amount0);
+    var amount1Min = toHex(minimumAmounts.amount1);
+    var deadline = toHex(options.deadline); // create pool if needed
+
+    if (isMint(options) && options.createPool) {
+      calldatas.push(this.encodeCreate(position.pool));
+    } // permits if necessary
+    // if (options.token0Permit) {
+    //   calldatas.push(SelfPermit.encodePermit(position.pool.token0, options.token0Permit))
+    // }
+    // if (options.token1Permit) {
+    //   calldatas.push(SelfPermit.encodePermit(position.pool.token1, options.token1Permit))
+    // }
+    // mint
+
+
+    if (isMint(options)) {
+      var recipient = ksSdkCore.validateAndParseAddress(options.recipient);
+      calldatas.push(NonfungiblePositionManager.INTERFACE.encodeFunctionData('mint', [{
+        token0: position.pool.token0.address,
+        token1: position.pool.token1.address,
+        fee: position.pool.fee,
+        tickLower: position.tickLower,
+        tickUpper: position.tickUpper,
+        amount0Desired: toHex(amount0Desired),
+        amount1Desired: toHex(amount1Desired),
+        amount0Min: amount0Min,
+        amount1Min: amount1Min,
+        recipient: recipient,
+        deadline: deadline
+      }]));
+    } else {
+      // increase
+      calldatas.push(NonfungiblePositionManager.INTERFACE.encodeFunctionData('increaseLiquidity', [{
+        tokenId: toHex(options.tokenId),
+        amount0Desired: toHex(amount0Desired),
+        amount1Desired: toHex(amount1Desired),
+        amount0Min: amount0Min,
+        amount1Min: amount1Min,
+        deadline: deadline
+      }]));
+    }
+
+    var value = toHex(0);
+
+    if (options.useNative) {
+      var wrapped = options.useNative.wrapped;
+      !(position.pool.token0.equals(wrapped) || position.pool.token1.equals(wrapped)) ?  invariant(false, 'NO_WETH')  : void 0;
+      var wrappedValue = position.pool.token0.equals(wrapped) ? amount0Desired : amount1Desired; // we only need to refund if we're actually sending ETH
+
+      if (JSBI.greaterThan(wrappedValue, ZERO)) {
+        calldatas.push(Payments.encodeRefundETH());
+      }
+
+      value = toHex(wrappedValue);
+    }
+
+    return {
+      calldata: Multicall.encodeMulticall(calldatas),
+      value: value
+    };
+  };
+
+  NonfungiblePositionManager.encodeCollect = function encodeCollect(options) {
+    var calldatas = [];
+    var tokenId = toHex(options.tokenId); // const involvesETH =
+    // options.expectedCurrencyOwed0.currency.isNative || options.expectedCurrencyOwed1.currency.isNative
+
+    var recipient = ksSdkCore.validateAndParseAddress(options.recipient);
+    var deadline = toHex(options.deadline); //remove a small amount to update the RTokens
+
+    if (!options.isRemovingLiquid) {
+      calldatas.push(NonfungiblePositionManager.INTERFACE.encodeFunctionData('removeLiquidity', [{
+        tokenId: tokenId,
+        liquidity: '0x1',
+        amount0Min: 0,
+        amount1Min: 0,
+        deadline: deadline
+      }]));
+    }
+
+    if (options.havingFee) {
+      // collect
+      calldatas.push(NonfungiblePositionManager.INTERFACE.encodeFunctionData('burnRTokens', [{
+        tokenId: tokenId,
+        amount0Min: 0,
+        amount1Min: 0,
+        deadline: deadline
+      }]));
+    }
+
+    var token0IsNative = options.expectedCurrencyOwed0.currency.isNative;
+    var token1IsNative = options.expectedCurrencyOwed1.currency.isNative;
+    var token0Amount = options.expectedCurrencyOwed0.quotient;
+    var token1Amount = options.expectedCurrencyOwed1.quotient;
+
+    if (token0IsNative) {
+      calldatas.push(Payments.encodeUnwrapWETH(token0Amount, recipient));
+    } else {
+      var token = options.expectedCurrencyOwed0.currency;
+      calldatas.push(Payments.encodeSweepToken(token, token0Amount, recipient));
+    }
+
+    if (token1IsNative) {
+      calldatas.push(Payments.encodeUnwrapWETH(token1Amount, recipient));
+    } else {
+      var _token = options.expectedCurrencyOwed1.currency;
+      calldatas.push(Payments.encodeSweepToken(_token, token1Amount, recipient));
+    } // if (involvesETH) {
+    //   const ethAmount = options.expectedCurrencyOwed0.currency.isNative
+    //     ? options.expectedCurrencyOwed0.quotient
+    //     : options.expectedCurrencyOwed1.quotient
+    //   const token = options.expectedCurrencyOwed0.currency.isNative
+    //     ? (options.expectedCurrencyOwed1.currency as Token)
+    //     : (options.expectedCurrencyOwed0.currency as Token)
+    //   const tokenAmount = options.expectedCurrencyOwed0.currency.isNative
+    //     ? options.expectedCurrencyOwed1.quotient
+    //     : options.expectedCurrencyOwed0.quotient
+    //   calldatas.push(Payments.encodeUnwrapWETH(ethAmount, recipient))
+    //   calldatas.push(Payments.encodeSweepToken(token, tokenAmount, recipient))
+    // }
+
+
+    return calldatas;
+  };
+
+  NonfungiblePositionManager.collectCallParameters = function collectCallParameters(options) {
+    var calldatas = NonfungiblePositionManager.encodeCollect(options);
+    return {
+      calldata: Multicall.encodeMulticall(calldatas),
+      value: toHex(0)
+    };
+  }
+  /**
+   * Produces the calldata for completely or partially exiting a position
+   * @param position The position to exit
+   * @param options Additional information necessary for generating the calldata
+   * @returns The call parameters
+   */
+  ;
+
+  NonfungiblePositionManager.removeCallParameters = function removeCallParameters(position, options) {
+    var calldatas = [];
+    var deadline = toHex(options.deadline);
+    var tokenId = toHex(options.tokenId);
+    console.log(position); // construct a partial position with a percentage of liquidity
+
+    var partialPosition = new Position({
+      pool: position.pool,
+      liquidity: options.liquidityPercentage.multiply(position.liquidity).quotient,
+      tickLower: position.tickLower,
+      tickUpper: position.tickUpper
+    });
+    !JSBI.greaterThan(partialPosition.liquidity, ZERO) ?  invariant(false, 'ZERO_LIQUIDITY')  : void 0; // slippage-adjusted underlying amounts
+
+    var _partialPosition$burn = partialPosition.burnAmountsWithSlippage(options.slippageTolerance),
+        amount0Min = _partialPosition$burn.amount0,
+        amount1Min = _partialPosition$burn.amount1;
+
+    if (options.permit) {
+      calldatas.push(NonfungiblePositionManager.INTERFACE.encodeFunctionData('permit', [ksSdkCore.validateAndParseAddress(options.permit.spender), tokenId, toHex(options.permit.deadline), options.permit.v, options.permit.r, options.permit.s]));
+    } // remove liquidity
+
+
+    calldatas.push(NonfungiblePositionManager.INTERFACE.encodeFunctionData('removeLiquidity', [{
+      tokenId: tokenId,
+      liquidity: toHex(partialPosition.liquidity),
+      amount0Min: toHex(amount0Min),
+      amount1Min: toHex(amount1Min),
+      deadline: deadline
+    }]));
+
+    var _options$collectOptio = options.collectOptions,
+        expectedCurrencyOwed0 = _options$collectOptio.expectedCurrencyOwed0,
+        expectedCurrencyOwed1 = _options$collectOptio.expectedCurrencyOwed1,
+        rest = _objectWithoutPropertiesLoose(_options$collectOptio, _excluded);
+
+    calldatas.push.apply(calldatas, NonfungiblePositionManager.encodeCollect(_extends({
+      tokenId: toHex(options.tokenId),
+      // add the underlying value to the expected currency already owed
+      expectedCurrencyOwed0: expectedCurrencyOwed0.add(ksSdkCore.CurrencyAmount.fromRawAmount(expectedCurrencyOwed0.currency, amount0Min)),
+      expectedCurrencyOwed1: expectedCurrencyOwed1.add(ksSdkCore.CurrencyAmount.fromRawAmount(expectedCurrencyOwed1.currency, amount1Min))
+    }, rest)));
+
+    if (options.liquidityPercentage.equalTo(ONE)) {
+      if (options.burnToken) {
+        calldatas.push(NonfungiblePositionManager.INTERFACE.encodeFunctionData('burn', [tokenId]));
+      }
+    } else {
+      !(options.burnToken !== true) ?  invariant(false, 'CANNOT_BURN')  : void 0;
+    }
+
+    return {
+      calldata: Multicall.encodeMulticall(calldatas),
+      value: toHex(0)
+    };
+  };
+
+  NonfungiblePositionManager.safeTransferFromParameters = function safeTransferFromParameters(options) {
+    var recipient = ksSdkCore.validateAndParseAddress(options.recipient);
+    var sender = ksSdkCore.validateAndParseAddress(options.sender);
+    var calldata;
+
+    if (options.data) {
+      calldata = NonfungiblePositionManager.INTERFACE.encodeFunctionData('safeTransferFrom(address,address,uint256,bytes)', [sender, recipient, toHex(options.tokenId), options.data]);
+    } else {
+      calldata = NonfungiblePositionManager.INTERFACE.encodeFunctionData('safeTransferFrom(address,address,uint256)', [sender, recipient, toHex(options.tokenId)]);
+    }
+
+    return {
+      calldata: calldata,
+      value: toHex(0)
+    };
+  };
+
+  return NonfungiblePositionManager;
+}();
+NonfungiblePositionManager.INTERFACE = /*#__PURE__*/new abi$5.Interface(abi$1);
 
 exports.ADDRESS_ZERO = ADDRESS_ZERO;
 exports.FACTORY_ADDRESS = FACTORY_ADDRESS;
